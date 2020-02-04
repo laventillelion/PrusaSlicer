@@ -25,12 +25,11 @@ unset(NLopt_LIBS CACHE)
 
 set(NLopt_DIR $ENV{NLOPT})
 if(NOT NLopt_DIR)
-
 	set(NLopt_FOUND TRUE)
 
 	set(_NLopt_LIB_NAMES "nlopt")
 	find_library(NLopt_LIBS
-		NAMES ${_NLopt_LIB_NAMES})
+		NAMES ${_NLopt_LIB_NAMES} PATHS "${LOCALINSTALL_DIR}/lib")
 	if(NOT NLopt_LIBS)
 		set(NLopt_FOUND FALSE)
 		set(NLopt_ERROR_REASON "${NLopt_ERROR_REASON} Cannot find NLopt library '${_NLopt_LIB_NAMES}'.")
@@ -41,7 +40,7 @@ if(NOT NLopt_DIR)
 
 	set(_NLopt_HEADER_FILE_NAME "nlopt.hpp")
 	find_file(_NLopt_HEADER_FILE
-		NAMES ${_NLopt_HEADER_FILE_NAME})
+		NAMES ${_NLopt_HEADER_FILE_NAME} PATHS "${LOCALINSTALL_DIR}/include")
 	if(NOT _NLopt_HEADER_FILE)
 		set(NLopt_FOUND FALSE)
 		set(NLopt_ERROR_REASON "${NLopt_ERROR_REASON} Cannot find NLopt header file '${_NLopt_HEADER_FILE_NAME}'.")
@@ -49,6 +48,7 @@ if(NOT NLopt_DIR)
 	unset(_NLopt_HEADER_FILE_NAME)
 	
 	if(NOT NLopt_FOUND)
+
 		set(NLopt_ERROR_REASON "${NLopt_ERROR_REASON} NLopt not found in system directories (and environment variable NLOPT is not set).")
 	else()
 	get_filename_component(NLopt_INCLUDE_DIR ${_NLopt_HEADER_FILE} DIRECTORY )
@@ -72,7 +72,7 @@ else()
 		set(NLopt_ERROR_REASON "${NLopt_ERROR_REASON} Directory '${NLopt_LIBRARY_DIR}' does not exist.")
 	endif()
 
-	set(_NLopt_LIB_NAMES "nlopt_cxx")
+	set(_NLopt_LIB_NAMES "nlopt")
 	find_library(NLopt_LIBS
 		NAMES ${_NLopt_LIB_NAMES}
 		PATHS ${NLopt_LIBRARY_DIR}

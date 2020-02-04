@@ -291,7 +291,7 @@ find_package_handle_standard_args(OpenVDB
 # ------------------------------------------------------------------------
 
 # Set the ABI number the library was built against. Uses vdb_print
-find_program(OPENVDB_PRINT vdb_print PATHS ${OpenVDB_INCLUDE_DIR} )
+find_program(OPENVDB_PRINT vdb_print PATHS ${LOCALINSTALL_DIR}/bin )
 
 OPENVDB_ABI_VERSION_FROM_PRINT(
   "${OPENVDB_PRINT}"
@@ -326,7 +326,7 @@ macro(just_fail msg)
   return()
 endmacro()
 
-find_package(IlmBase QUIET COMPONENTS Half)
+find_package(IlmBase COMPONENTS Half)
 if(NOT IlmBase_FOUND)
   pkg_check_modules(IlmBase QUIET IlmBase)
 endif()
@@ -408,11 +408,14 @@ unset(_OPENVDB_PREREQUISITE_LIST)
 unset(_HAS_DEP)
 
 if(OpenVDB_USES_BLOSC)
-  find_package(Blosc QUIET)
+  find_package(Blosc)
   if(NOT Blosc_FOUND OR NOT TARGET Blosc::blosc) 
+        just_fail("Blosc library can not be found!")
+
     message(STATUS "find_package could not find Blosc. Using fallback blosc search...")
     find_path(Blosc_INCLUDE_DIR blosc.h)
     find_library(Blosc_LIBRARY NAMES blosc)
+
     if (Blosc_INCLUDE_DIR AND Blosc_LIBRARY)
       set(Blosc_FOUND TRUE)
       add_library(Blosc::blosc UNKNOWN IMPORTED)

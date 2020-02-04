@@ -158,7 +158,7 @@ void MainFrame::update_title()
         if (!project.empty())
             title += (project + " - ");
     }
-    title += (wxString(SLIC3R_BUILD_ID) + " " + _(L("based on Slic3r")));
+    title += (wxString(SLIC3R_BUILD_ID) + " " + _(L("based on PrusaSlicer/Slic3r")));
 
     SetTitle(title);
 }
@@ -631,10 +631,10 @@ void MainFrame::init_menubar()
         SetAcceleratorTable(accel);
 #endif // _WIN32
 
-        windowMenu->AppendSeparator();
-        append_menu_item(windowMenu, wxID_ANY, _(L("Print &Host Upload Queue")) + "\tCtrl+J", _(L("Display the Print Host Upload Queue window")),
-            [this](wxCommandEvent&) { m_printhost_queue_dlg->Show(); }, "upload_queue", nullptr,
-            [this]() {return true; }, this);
+        //windowMenu->AppendSeparator();
+        //append_menu_item(windowMenu, wxID_ANY, _(L("Print &Host Upload Queue")) + "\tCtrl+J", _(L("Display the Print Host Upload Queue window")),
+        //    [this](wxCommandEvent&) { m_printhost_queue_dlg->Show(); }, "upload_queue", nullptr,
+        //    [this]() {return true; }, this);
     }
 
     // View menu
@@ -664,17 +664,17 @@ void MainFrame::init_menubar()
     // Help menu
     auto helpMenu = new wxMenu();
     {
-        append_menu_item(helpMenu, wxID_ANY, _(L("Prusa 3D &Drivers")), _(L("Open the Prusa3D drivers download page in your browser")), 
-            [this](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/downloads"); }); 
-        append_menu_item(helpMenu, wxID_ANY, _(L("Software &Releases")), _(L("Open the software releases page in your browser")), 
-            [this](wxCommandEvent&) { wxLaunchDefaultBrowser("http://github.com/prusa3d/PrusaSlicer/releases"); });
+        //append_menu_item(helpMenu, wxID_ANY, _(L("Prusa 3D &Drivers")), _(L("Open the Prusa3D drivers download page in your browser")), 
+        //    [this](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/downloads"); }); 
+        //append_menu_item(helpMenu, wxID_ANY, _(L("Software &Releases")), _(L("Open the software releases page in your browser")), 
+        //    [this](wxCommandEvent&) { wxLaunchDefaultBrowser("http://github.com/prusa3d/PrusaSlicer/releases"); });
 //#        my $versioncheck = $self->_append_menu_item($helpMenu, "Check for &Updates...", "Check for new Slic3r versions", sub{
 //#            wxTheApp->check_version(1);
 //#        });
 //#        $versioncheck->Enable(wxTheApp->have_version_check);
-        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_(L("%s &Website")), SLIC3R_APP_NAME), 
-                                             wxString::Format(_(L("Open the %s website in your browser")), SLIC3R_APP_NAME),
-            [this](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/slicerweb"); });
+        //append_menu_item(helpMenu, wxID_ANY, wxString::Format(_(L("%s &Website")), SLIC3R_APP_NAME), 
+        //                                     wxString::Format(_(L("Open the %s website in your browser")), SLIC3R_APP_NAME),
+        //    [this](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/slicerweb"); });
 //        append_menu_item(helpMenu, wxID_ANY, wxString::Format(_(L("%s &Manual")), SLIC3R_APP_NAME),
 //                                             wxString::Format(_(L("Open the %s manual in your browser")), SLIC3R_APP_NAME),
 //            [this](wxCommandEvent&) { wxLaunchDefaultBrowser("http://manual.slic3r.org/"); });
