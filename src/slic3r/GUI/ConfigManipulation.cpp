@@ -271,9 +271,11 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig* config)
     for (auto el : { "support_material_pattern", "support_material_with_sheath",
                     "support_material_spacing", "support_material_angle", "support_material_interface_layers",
                     "dont_support_bridges", "support_material_extrusion_width", "support_material_contact_distance",
-                    "support_material_xy_spacing" })
+                    "support_material_xy_spacing", "raft_pattern_spacing", "first_raft_layer_height" })
         toggle_field(el, have_support_material);
-    toggle_field("support_material_threshold", have_support_material_auto);
+
+    for (auto el : { "raft_pattern_spacing", "first_raft_layer_height" })
+        toggle_field(el, have_raft);
 
     for (auto el : { "support_material_interface_spacing", "support_material_interface_extruder",
                     "support_material_interface_speed", "support_material_interface_contact_loops" })

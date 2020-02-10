@@ -1504,6 +1504,24 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionInt(0));
 
+    // JASON
+    def = this->add("raft_pattern_spacing", coFloat);
+    def->label = L("Raft pattern spacing");
+    def->category = L("Support material");
+    def->tooltip = L("spacing between lines of the first raft layer");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(2.5));
+
+    def = this->add("first_raft_layer_height", coFloatOrPercent);
+    def->label = L("First Raft Layer Z-Height");
+    def->category = L("Support material");
+    def->tooltip = L("First Raft Layer Z-Height");
+    def->sidetext = L("mm or %");
+    def->ratio_over = "layer_height";
+    def->set_default_value(new ConfigOptionFloatOrPercent(0.35, false));
+
     def = this->add("resolution", coFloat);
     def->label = L("Resolution");
     def->tooltip = L("Minimum detail resolution, used to simplify the input file for speeding up "

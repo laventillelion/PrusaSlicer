@@ -1106,6 +1106,9 @@ void TabPrint::build()
 
         optgroup = page->new_optgroup(_(L("Raft")));
         optgroup->append_single_option_line("raft_layers");
+        optgroup->append_single_option_line("raft_pattern_spacing");
+        optgroup->append_single_option_line("first_raft_layer_height");
+
 //		# optgroup->append_single_option_line(get_option_("raft_contact_distance");
 
         optgroup = page->new_optgroup(_(L("Options for support material and raft")));

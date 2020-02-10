@@ -47,9 +47,17 @@ SlicingParameters SlicingParameters::create_from_config(
 	coordf_t				 object_height,
 	const std::vector<unsigned int> &object_extruders)
 {
-    coordf_t first_layer_height                      = (object_config.first_layer_height.value <= 0) ? 
+    coordf_t first_layer_height;
+    if(object_config.raft_layers <= 0) {
+        first_layer_height = (object_config.first_layer_height.value <= 0) ? 
         object_config.layer_height.value : 
         object_config.first_layer_height.get_abs_value(object_config.layer_height.value);
+    }
+    else {
+        first_layer_height = (object_config.first_raft_layer_height.value <= 0) ? 
+        object_config.layer_height.value : 
+        object_config.first_raft_layer_height.get_abs_value(object_config.layer_height.value);
+    }
     // If object_config.support_material_extruder == 0 resp. object_config.support_material_interface_extruder == 0,
     // print_config.nozzle_diameter.get_at(size_t(-1)) returns the 0th nozzle diameter,
     // which is consistent with the requirement that if support_material_extruder == 0 resp. support_material_interface_extruder == 0,

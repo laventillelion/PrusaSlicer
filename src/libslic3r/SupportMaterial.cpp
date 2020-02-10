@@ -2928,6 +2928,8 @@ void PrintObjectSupportMaterial::generate_toolpaths(
     coordf_t interface_density  = std::min(1., m_support_material_interface_flow.spacing() / interface_spacing);
     coordf_t support_spacing    = m_object_config->support_material_spacing.value + m_support_material_flow.spacing();
     coordf_t support_density    = std::min(1., m_support_material_flow.spacing() / support_spacing);
+    coordf_t raft_spacing    = m_object_config->raft_pattern_spacing.value + m_support_material_flow.spacing();
+    coordf_t raft_density    = std::min(1., m_support_material_flow.spacing() / raft_spacing);
     if (m_object_config->support_material_interface_layers.value == 0) {
         // No interface layers allowed, print everything with the base support pattern.
         interface_spacing = support_spacing;
@@ -2978,11 +2980,12 @@ void PrintObjectSupportMaterial::generate_toolpaths(
 
     // Insert the raft base layers.
     size_t n_raft_layers = size_t(std::max(0, int(m_slicing_params.raft_layers()) - 1));
+
     tbb::parallel_for(tbb::blocked_range<size_t>(0, n_raft_layers),
-        [this, &object, &raft_layers, 
-            infill_pattern, &bbox_object, support_density, interface_density, raft_angle_1st_layer, raft_angle_base, raft_angle_interface, link_max_length_factor, with_sheath]
-            (const tbb::blocked_range<size_t>& range) {
-        for (size_t support_layer_id = range.begin(); support_layer_id < range.end(); ++ support_layer_id)
+    [this, &object, &raft_layers, 
+        infill_pattern, &bbox_object, support_density, interface_density, raft_spacing, raft_angle_1st_layer, raft_angle_base, raft_angle_interface, link_max_length_factor, with_sheath]
+        (const tbb::blocked_range<size_t>& range) {
+    for (size_t support_layer_id = range.begin(); support_layer_id < range.end(); ++ support_layer_id)
         {
             assert(support_layer_id < raft_layers.size());
             SupportLayer &support_layer = *object.support_layers()[support_layer_id];
@@ -3044,7 +3047,7 @@ void PrintObjectSupportMaterial::generate_toolpaths(
             if (support_layer_id == 0) {
                 // Base flange.
                 filler->angle = raft_angle_1st_layer;
-                filler->spacing = m_first_layer_flow.spacing();
+                filler->spacing = m_object_config->raft_pattern_spacing.value;//m_first_layer_flow.spacing();
                 // 70% of density on the 1st layer.
                 density       = 0.7f;
             } else if (support_layer_id >= m_slicing_params.base_raft_layers) {

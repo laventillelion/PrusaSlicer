@@ -432,6 +432,8 @@ public:
     ConfigOptionFloat               support_material_spacing;
     ConfigOptionFloat               support_material_speed;
     ConfigOptionBool                support_material_synchronize_layers;
+    ConfigOptionFloat               raft_pattern_spacing;
+    ConfigOptionFloatOrPercent      first_raft_layer_height;
     // Overhang angle threshold.
     ConfigOptionInt                 support_material_threshold;
     ConfigOptionBool                support_material_with_sheath;
@@ -470,6 +472,9 @@ protected:
         OPT_PTR(support_material_interface_speed);
         OPT_PTR(support_material_pattern);
         OPT_PTR(support_material_spacing);
+        OPT_PTR(raft_pattern_spacing);
+        OPT_PTR(first_raft_layer_height);
+
         OPT_PTR(support_material_speed);
         OPT_PTR(support_material_synchronize_layers);
         OPT_PTR(support_material_xy_spacing);
