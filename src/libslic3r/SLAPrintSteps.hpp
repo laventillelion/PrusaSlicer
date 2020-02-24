@@ -1,6 +1,8 @@
 #ifndef SLAPRINTSTEPS_HPP
 #define SLAPRINTSTEPS_HPP
 
+#include <random>
+
 #include <libslic3r/SLAPrint.hpp>
 
 #include <libslic3r/SLA/Hollowing.hpp>
@@ -12,6 +14,7 @@ class SLAPrint::Steps
 {
 private:
     SLAPrint *m_print = nullptr;
+    std::mt19937 m_rng;
     
 public:    
     // where the per object operations start and end
@@ -39,6 +42,8 @@ private:
     void throw_if_canceled() const { m_print->throw_if_canceled(); }
     bool canceled() const { return m_print->canceled(); }
     void initialize_printer_input();
+    
+    void apply_printer_corrections(SLAPrintObject &po, SliceOrigin o);
     
 public:
     Steps(SLAPrint *print);

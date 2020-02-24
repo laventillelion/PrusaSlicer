@@ -77,7 +77,9 @@ static int extruders_count()
 
 static void take_snapshot(const wxString& snapshot_name) 
 {
-    wxGetApp().plater()->take_snapshot(snapshot_name);
+    Plater* plater = wxGetApp().plater();
+    if (plater)
+        plater->take_snapshot(snapshot_name);
 }
 
 ObjectList::ObjectList(wxWindow* parent) :
@@ -978,6 +980,8 @@ void ObjectList::key_event(wxKeyEvent& event)
         ) {
         remove();
     }
+    else if (event.GetKeyCode() == WXK_F5)
+        wxGetApp().plater()->reload_all_from_disk();
     else if (wxGetKeyState(wxKeyCode('A')) && wxGetKeyState(WXK_CONTROL/*WXK_SHIFT*/))
         select_item_all_children();
     else if (wxGetKeyState(wxKeyCode('C')) && wxGetKeyState(WXK_CONTROL)) 
@@ -1132,6 +1136,8 @@ void ObjectList::OnDrop(wxDataViewEvent &event)
     changed_object(m_dragged_data.obj_idx());
 
     m_dragged_data.clear();
+
+    wxGetApp().plater()->set_current_canvas_as_dirty();
 }
 
 
@@ -1537,7 +1543,8 @@ wxMenuItem* ObjectList::append_menu_item_settings(wxMenu* menu_)
     // If there are selected more then one instance but not all of them
     // don't add settings menu items
     const Selection& selection = scene_selection();
-    if (selection.is_multiple_full_instance() && !selection.is_single_full_object())
+    if (selection.is_multiple_full_instance() && !selection.is_single_full_object() || 
+        selection.is_multiple_volume() || selection.is_mixed() ) // more than one volume(part) is selected on the scene
         return nullptr;
 
     const auto sel_vol = get_selected_model_volume();
@@ -1556,7 +1563,11 @@ wxMenuItem* ObjectList::append_menu_item_settings(wxMenu* menu_)
 
     // Add frequently settings
     const ItemType item_type = m_objects_model->GetItemType(GetSelection());
-    const bool is_object_settings = item_type & itObject || item_type & itInstance || selection.is_single_full_object();
+    if (item_type == itUndef && !selection.is_single_full_object())
+        return nullptr;
+    const bool is_object_settings = item_type & itObject || item_type & itInstance ||
+                                    // multi-selection in ObjectList, but full_object in Selection
+                                    (item_type == itUndef && selection.is_single_full_object()); 
     create_freq_settings_popupmenu(menu, is_object_settings);
 
     if (mode == comAdvanced)
@@ -1573,11 +1584,14 @@ wxMenuItem* ObjectList::append_menu_item_settings(wxMenu* menu_)
     return menu->Append(menu_item);
 }
 
-wxMenuItem* ObjectList::append_menu_item_change_type(wxMenu* menu)
+wxMenuItem* ObjectList::append_menu_item_change_type(wxMenu* menu, wxWindow* parent/* = nullptr*/)
 {
     return append_menu_item(menu, wxID_ANY, _(L("Change type")), "",
-        [this](wxCommandEvent&) { change_part_type(); }, "", menu);
-
+        [this](wxCommandEvent&) { change_part_type(); }, "", menu, 
+        [this]() {
+            wxDataViewItem item = GetSelection();
+            return item.IsOk() || m_objects_model->GetItemType(item) == itVolume;
+        }, parent);
 }
 
 wxMenuItem* ObjectList::append_menu_item_instance_to_object(wxMenu* menu, wxWindow* parent)
@@ -1647,45 +1661,56 @@ void ObjectList::append_menu_item_export_stl(wxMenu* menu) const
 
 void ObjectList::append_menu_item_reload_from_disk(wxMenu* menu) const
 {
-#if ENABLE_BACKWARD_COMPATIBLE_RELOAD_FROM_DISK
-    append_menu_item(menu, wxID_ANY, _(L("Reload from disk")), _(L("Reload the selected volumes from disk")),
-        [this](wxCommandEvent&) { wxGetApp().plater()->reload_from_disk(); }, "", menu);
-#else
     append_menu_item(menu, wxID_ANY, _(L("Reload from disk")), _(L("Reload the selected volumes from disk")),
         [this](wxCommandEvent&) { wxGetApp().plater()->reload_from_disk(); }, "", menu,
         []() { return wxGetApp().plater()->can_reload_from_disk(); }, wxGetApp().plater());
-#endif // ENABLE_BACKWARD_COMPATIBLE_RELOAD_FROM_DISK
 }
 
-void ObjectList::append_menu_item_change_extruder(wxMenu* menu) const
+void ObjectList::append_menu_item_change_extruder(wxMenu* menu)
 {
-    const wxString name = _(L("Change extruder"));
+    const std::vector<wxString> names = {_(L("Change extruder")), _(L("Set extruder for selected items")) };
     // Delete old menu item
-    const int item_id = menu->FindItem(name);
-    if (item_id != wxNOT_FOUND)
-        menu->Destroy(item_id);
+    for (const wxString& name : names) {
+        const int item_id = menu->FindItem(name);
+        if (item_id != wxNOT_FOUND)
+            menu->Destroy(item_id);
+    }
 
     const int extruders_cnt = extruders_count();
-    const wxDataViewItem item = GetSelection();
-    if (item && extruders_cnt > 1)
-    {
-        DynamicPrintConfig& config = get_item_config(item);
+    if (extruders_cnt <= 1)
+        return;
 
-        const int initial_extruder = !config.has("extruder") ? 0 :
-                                      config.option<ConfigOptionInt>("extruder")->value;
+    wxDataViewItemArray sels;
+    GetSelections(sels);
+    if (sels.IsEmpty())
+        return;
 
-        wxMenu* extruder_selection_menu = new wxMenu();
+    std::vector<wxBitmap*> icons = get_extruder_color_icons(true);
+    wxMenu* extruder_selection_menu = new wxMenu();
+    const wxString& name = sels.Count()==1 ? names[0] : names[1];
 
-        for (int i = 0; i <= extruders_cnt; i++)
-        {
-            const wxString& item_name = i == 0 ? _(L("Default")) : wxString::Format("%d", i);
-
-            append_menu_radio_item(extruder_selection_menu, wxID_ANY, item_name, "",
-                [this, i](wxCommandEvent&) { set_extruder_for_selected_items(i); }, menu)->Check(i == initial_extruder);
-        }
-
-        menu->AppendSubMenu(extruder_selection_menu, name, _(L("Select new extruder for the object/part")));
+    int initial_extruder = -1; // negative value for multiple object/part selection
+    if (sels.Count()==1) {
+        DynamicPrintConfig& config = get_item_config(sels[0]);
+        initial_extruder = !config.has("extruder") ? 0 : 
+                            config.option<ConfigOptionInt>("extruder")->value;
     }
+
+    for (int i = 0; i <= extruders_cnt; i++)
+    {
+        bool is_active_extruder = i == initial_extruder;
+        int icon_idx = i == 0 ? 0 : i - 1;
+
+        const wxString& item_name = (i == 0 ? _(L("Default")) : wxString::Format(_(L("Extruder %d")), i)) +
+                                    (is_active_extruder ? " (" + _(L("active")) + ")" : "");
+
+        append_menu_item(extruder_selection_menu, wxID_ANY, item_name, "",
+            [this, i](wxCommandEvent&) { set_extruder_for_selected_items(i); }, *icons[icon_idx], menu,
+            [is_active_extruder]() { return !is_active_extruder; }, GUI::wxGetApp().plater());
+
+    }
+
+    menu->AppendSubMenu(extruder_selection_menu, name);
 }
 
 void ObjectList::append_menu_item_delete(wxMenu* menu)
@@ -2270,6 +2295,8 @@ void ObjectList::split()
         // add settings to the part, if it has those
         add_settings_item(vol_item, &volume->config);
     }
+
+    model_object->input_file.clear();
 
     if (parent == item)
         Expand(parent);
@@ -3158,7 +3185,9 @@ void ObjectList::update_selections()
 
             for (auto obj_ins : objects_content_list) {
                 if (obj_ins.first == glv_obj_idx) {
-                    if (obj_ins.second.find(glv_ins_idx) != obj_ins.second.end()) {
+                    if (obj_ins.second.find(glv_ins_idx) != obj_ins.second.end() &&
+                        !selection.is_from_single_instance() ) // a case when volumes of different types are selected
+                    {
                         if (glv_ins_idx == 0 && (*m_objects)[glv_obj_idx]->instances.size() == 1)
                             sels.Add(m_objects_model->GetItemById(glv_obj_idx));
                         else
@@ -3903,6 +3932,10 @@ void ObjectList::OnEditingDone(wxDataViewEvent &event)
 	// Here the last active column is forgotten, so when leaving the editing mode, the next mouse click will not enter the editing mode of the newly selected column.
 	m_last_selected_column = -1;
 #endif //__WXMSW__
+
+    Plater* plater = wxGetApp().plater();
+    if (plater)
+        plater->set_current_canvas_as_dirty();
 }
 
 void ObjectList::show_multi_selection_menu()
@@ -3918,19 +3951,12 @@ void ObjectList::show_multi_selection_menu()
     wxMenu* menu = new wxMenu();
 
     if (extruders_count() > 1)
-        append_menu_item(menu, wxID_ANY, _(L("Set extruder for selected items")),
-            _(L("Select extruder number for selected objects and/or parts")),
-            [this](wxCommandEvent&) { extruder_selection(); }, "", menu);
+        append_menu_item_change_extruder(menu);
 
-#if ENABLE_BACKWARD_COMPATIBLE_RELOAD_FROM_DISK
-    append_menu_item(menu, wxID_ANY, _(L("Reload from disk")), _(L("Reload the selected volumes from disk")),
-        [this](wxCommandEvent&) { wxGetApp().plater()->reload_from_disk(); }, "", menu);
-#else
     append_menu_item(menu, wxID_ANY, _(L("Reload from disk")), _(L("Reload the selected volumes from disk")),
         [this](wxCommandEvent&) { wxGetApp().plater()->reload_from_disk(); }, "", menu, []() {
         return wxGetApp().plater()->can_reload_from_disk();
     }, wxGetApp().plater());
-#endif // ENABLE_BACKWARD_COMPATIBLE_RELOAD_FROM_DISK
 
     wxGetApp().plater()->PopupMenu(menu);
 }

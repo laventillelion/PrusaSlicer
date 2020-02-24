@@ -418,6 +418,8 @@ private:
     friend class WipeTowerIntegration;
 };
 
+std::vector<const PrintInstance*> sort_object_instances_by_model_order(const Print& print);
+
 }
 
 #endif

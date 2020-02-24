@@ -456,11 +456,13 @@ int copy_file(const std::string &from, const std::string &to, const bool with_ch
 
 int check_copy(const std::string &origin, const std::string &copy)
 {
-	std::ifstream f1(origin, std::ifstream::in | std::ifstream::binary | std::ifstream::ate);
-	std::ifstream f2(copy, std::ifstream::in | std::ifstream::binary | std::ifstream::ate);
+	boost::nowide::ifstream f1(origin, std::ifstream::in | std::ifstream::binary | std::ifstream::ate);
+	boost::nowide::ifstream f2(copy, std::ifstream::in | std::ifstream::binary | std::ifstream::ate);
 
-	if (f1.fail() || f2.fail())
-		return -2;
+	if (f1.fail())
+		return -4;
+	if (f2.fail())
+		return -5;
 
 	std::streampos fsize = f1.tellg();
 	if (fsize != f2.tellg())
@@ -584,15 +586,20 @@ std::string string_printf(const char *format, ...)
     va_start(args1, format);
     va_list args2;
     va_copy(args2, args1);
-
-    size_t needed_size = ::vsnprintf(nullptr, 0, format, args1) + 1;
-    va_end(args1);
-
-    std::string res(needed_size, '\0');
-    ::vsnprintf(&res.front(), res.size(), format, args2);
-    va_end(args2);
-
-    return res;
+    
+    static const size_t INITIAL_LEN = 200;
+    std::string buffer(INITIAL_LEN, '\0');
+    
+    int bufflen = ::vsnprintf(buffer.data(), INITIAL_LEN - 1, format, args1);
+    
+    if (bufflen >= int(INITIAL_LEN)) {
+        buffer.resize(size_t(bufflen) + 1);
+        ::vsnprintf(buffer.data(), buffer.size(), format, args2);
+    }
+    
+    buffer.resize(bufflen);
+    
+    return buffer;
 }
 
 std::string header_slic3r_generated()

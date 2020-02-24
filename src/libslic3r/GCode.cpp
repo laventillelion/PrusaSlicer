@@ -1031,11 +1031,11 @@ namespace DoExport {
 		std::string filament_stats_string_out;
 
 	    print_statistics.clear();
-	    print_statistics.estimated_normal_print_time = normal_time_estimator.get_time_dhms();
-	    print_statistics.estimated_silent_print_time = silent_time_estimator_enabled ? silent_time_estimator.get_time_dhms() : "N/A";
-	    print_statistics.estimated_normal_color_print_times = normal_time_estimator.get_color_times_dhms(true);
+	    print_statistics.estimated_normal_print_time = normal_time_estimator.get_time_dhm/*s*/();
+	    print_statistics.estimated_silent_print_time = silent_time_estimator_enabled ? silent_time_estimator.get_time_dhm/*s*/() : "N/A";
+	    print_statistics.estimated_normal_custom_gcode_print_times = normal_time_estimator.get_custom_gcode_times_dhm(true);
 	    if (silent_time_estimator_enabled)
-	        print_statistics.estimated_silent_color_print_times = silent_time_estimator.get_color_times_dhms(true);
+	        print_statistics.estimated_silent_custom_gcode_print_times = silent_time_estimator.get_custom_gcode_times_dhm(true);
 	    print_statistics.total_toolchanges = std::max(0, wipe_tower_data.number_of_toolchanges);
 	    if (! extruders.empty()) {
 	        std::pair<std::string, unsigned int> out_filament_used_mm ("; filament used [mm] = ", 0);
@@ -1077,11 +1077,11 @@ namespace DoExport {
 	            print_statistics.total_wipe_tower_cost += has_wipe_tower ? (extruded_volume - extruder.extruded_volume())* extruder.filament_density() * 0.001 * extruder.filament_cost() * 0.001 : 0.;
 	        }
 	        filament_stats_string_out += out_filament_used_mm.first;
-			filament_stats_string_out += out_filament_used_cm3.first;
+            filament_stats_string_out += "\n" + out_filament_used_cm3.first;
 			if (out_filament_used_g.second)
-				filament_stats_string_out += out_filament_used_g.first;
+                filament_stats_string_out += "\n" + out_filament_used_g.first;
 			if (out_filament_cost.second)
-				filament_stats_string_out += out_filament_cost.first;
+                filament_stats_string_out += "\n" + out_filament_cost.first;
 	    }
 	    return filament_stats_string_out;
 	}
@@ -1091,7 +1091,7 @@ namespace DoExport {
 static inline std::vector<const PrintInstance*> sort_object_instances_by_max_z(const Print &print)
 {
     std::vector<const PrintObject*> objects(print.objects().begin(), print.objects().end());
-	std::sort(objects.begin(), objects.end(), [](const PrintObject *po1, const PrintObject *po2) { return po1->size()(2) < po2->size()(2); });
+	std::sort(objects.begin(), objects.end(), [](const PrintObject *po1, const PrintObject *po2) { return po1->height() < po2->height(); });
 	std::vector<const PrintInstance*> instances;
 	instances.reserve(objects.size());
 	for (const PrintObject *object : objects)
@@ -1101,7 +1101,7 @@ static inline std::vector<const PrintInstance*> sort_object_instances_by_max_z(c
 }
 
 // Produce a vector of PrintObjects in the order of their respective ModelObjects in print.model().
-static inline std::vector<const PrintInstance*> sort_object_instances_by_model_order(const Print &print)
+std::vector<const PrintInstance*> sort_object_instances_by_model_order(const Print& print)
 {
     // Build up map from ModelInstance* to PrintInstance*
     std::vector<std::pair<const ModelInstance*, const PrintInstance*>> model_instance_to_print_instance;
@@ -1520,6 +1520,7 @@ void GCode::_do_export(Print& print, FILE* file)
         m_writer.extruders(),
         // Modifies
         print.m_print_statistics));
+    _write(file, "\n");
     _write_format(file, "; total filament used [g] = %.1lf\n", print.m_print_statistics.total_weight);
     _write_format(file, "; total filament cost = %.1lf\n", print.m_print_statistics.total_cost);
     if (print.m_print_statistics.total_toolchanges > 0)
@@ -1770,7 +1771,7 @@ namespace ProcessLayer
     	const CustomGCode::Item 								*custom_gcode,
         // ID of the first extruder printing this layer.
         unsigned int                                             first_extruder_id,
-		bool  											         single_material_print)
+		bool  											         single_extruder_printer)
 	{
         std::string gcode;
         
@@ -1778,31 +1779,39 @@ namespace ProcessLayer
 			// Extruder switches are processed by LayerTools, they should be filtered out.
 			assert(custom_gcode->gcode != ToolChangeCode);
 
-            const std::string &custom_code = custom_gcode->gcode;
+            const std::string  &custom_code  = custom_gcode->gcode;
+            bool  				color_change = custom_code == ColorChangeCode;
+            bool 				tool_change  = custom_code == ToolChangeCode;
+		    // Tool Change is applied as Color Change for a single extruder printer only.
+		    assert(! tool_change || single_extruder_printer);
+
 		    std::string pause_print_msg;
 		    int m600_extruder_before_layer = -1;
-	        if (custom_code == ColorChangeCode && custom_gcode->extruder > 0)
+	        if (color_change && custom_gcode->extruder > 0)
 	            m600_extruder_before_layer = custom_gcode->extruder - 1;
 	        else if (custom_code == PausePrintCode)
 	            pause_print_msg = custom_gcode->color;
 
-		    // we should add or not colorprint_change in respect to nozzle_diameter count instead of really used extruders count	        
-	        if (custom_code == ColorChangeCode) // color change
+		    // we should add or not colorprint_change in respect to nozzle_diameter count instead of really used extruders count
+	        if (color_change || tool_change)
 	        {
+		        // Color Change or Tool Change as Color Change.
 	            // add tag for analyzer
 	            gcode += "; " + GCodeAnalyzer::Color_Change_Tag + ",T" + std::to_string(m600_extruder_before_layer) + "\n";
 	            // add tag for time estimator
 	            gcode += "; " + GCodeTimeEstimator::Color_Change_Tag + "\n";
 
-	            if (!single_material_print && m600_extruder_before_layer >= 0 && first_extruder_id != m600_extruder_before_layer
+	            if (!single_extruder_printer && m600_extruder_before_layer >= 0 && first_extruder_id != m600_extruder_before_layer
 	                // && !MMU1
 	                ) {
 	                //! FIXME_in_fw show message during print pause
 	                gcode += "M601\n"; // pause print
 	                gcode += "M117 Change filament for Extruder " + std::to_string(m600_extruder_before_layer) + "\n";
 	            }
-	            else 
-	                gcode += custom_code + "\n";
+                else {
+                    gcode += ColorChangeCode;
+                    gcode += "\n";
+                }
 	        } 
 	        else
 	        {
@@ -1814,7 +1823,7 @@ namespace ProcessLayer
 	                if (!pause_print_msg.empty())
 	                    gcode += "M117 " + pause_print_msg + "\n";
 	                // add tag for time estimator
-	                //gcode += "; " + GCodeTimeEstimator::Pause_Print_Tag + "\n";
+	                gcode += "; " + GCodeTimeEstimator::Pause_Print_Tag + "\n";
 	            }
 	            else // custom Gcode
 	            {
@@ -1863,7 +1872,9 @@ namespace Skirt {
         const Print 							&print,
 	    const std::vector<GCode::LayerToPrint> 	&layers,
 	    const LayerTools                		&layer_tools,
-        // Heights (print_z) at which the skirt has already been extruded.
+	    // First non-empty support layer.
+	    const SupportLayer  					*support_layer,
+	    // Heights (print_z) at which the skirt has already been extruded.
         std::vector<coordf_t>			    	&skirt_done)
     {
         // Extrude skirt at the print_z of the raft layers and normal object layers
@@ -1876,7 +1887,7 @@ namespace Skirt {
             // This print_z has not been extruded yet (sequential print)
             skirt_done.back() < layer_tools.print_z - EPSILON &&
             // and this layer is an object layer, or it is a raft layer.
-            (layer_tools.has_object || layers.front().support_layer->id() < (size_t)layers.front().support_layer->object()->config().raft_layers.value)) {
+            (layer_tools.has_object || support_layer->id() < (size_t)support_layer->object()->config().raft_layers.value)) {
 #if 0
             // Prime just the first printing extruder. This is original Slic3r's implementation.
             skirt_loops_per_extruder_out[layer_tools.extruders.front()] = std::pair<size_t, size_t>(0, print.config().skirts.value);
@@ -2004,7 +2015,7 @@ void GCode::process_layer(
     // not at the print_z of the interlaced support material layers.
     skirt_loops_per_extruder = first_layer ?
         Skirt::make_skirt_loops_per_extruder_1st_layer(print, layers, layer_tools, m_skirt_done) :
-        Skirt::make_skirt_loops_per_extruder_other_layers(print, layers, layer_tools, m_skirt_done);
+        Skirt::make_skirt_loops_per_extruder_other_layers(print, layers, layer_tools, support_layer, m_skirt_done);
 
     // Group extrusions by an extruder, then by an object, an island and a region.
     std::map<unsigned int, std::vector<ObjectByExtruder>> by_extruder;
@@ -2111,16 +2122,16 @@ void GCode::process_layer(
 
                         // Let's recover vector of extruder overrides:
                         const WipingExtrusions::ExtruderPerCopy *entity_overrides = nullptr;
+                        if (! layer_tools.has_extruder(correct_extruder_id)) {
+							// this entity is not overridden, but its extruder is not in layer_tools - we'll print it
+                            // by last extruder on this layer (could happen e.g. when a wiping object is taller than others - dontcare extruders are eradicated from layer_tools)
+                            correct_extruder_id = layer_tools.extruders.back();
+                        }
+                        printing_extruders.clear();
                         if (is_anything_overridden) {
-	                        printing_extruders.clear();
-	                        if (! layer_tools.has_extruder(correct_extruder_id)) {
-								// this entity is not overridden, but its extruder is not in layer_tools - we'll print it
-	                            // by last extruder on this layer (could happen e.g. when a wiping object is taller than others - dontcare extruders are eradicated from layer_tools)
-	                            correct_extruder_id = layer_tools.extruders.back();
-	                        }
                         	entity_overrides = const_cast<LayerTools&>(layer_tools).wiping_extrusions().get_extruder_overrides(extrusions, correct_extruder_id, layer_to_print.object()->instances().size());
 	                        if (entity_overrides == nullptr) {
-	                        	printing_extruders.emplace_back(correct_extruder_id);
+		                    	printing_extruders.emplace_back(correct_extruder_id);
 	                        } else {
 	                        	printing_extruders.reserve(entity_overrides->size());
 	                        	for (int extruder : *entity_overrides)
@@ -2129,10 +2140,10 @@ void GCode::process_layer(
 	                        			extruder : 
 	                        			// at least one copy would normally be printed with this extruder (see get_extruder_overrides function for explanation)
 	                        			static_cast<unsigned int>(- extruder - 1));
+		                        Slic3r::sort_remove_duplicates(printing_extruders);
 	                        }
-	                        Slic3r::sort_remove_duplicates(printing_extruders);
 	                    } else
-	                    	printing_extruders = { (unsigned int)correct_extruder_id };
+	                    	printing_extruders.emplace_back(correct_extruder_id);
 
                         // Now we must add this extrusion into the by_extruder map, once for each extruder that will print it:
                         for (unsigned int extruder : printing_extruders)
@@ -2604,8 +2615,9 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, std::string description, dou
             }
         }
         else if (seam_position == spRear) {
-            last_pos = m_layer->object()->bounding_box().center();
-            last_pos(1) += coord_t(3. * m_layer->object()->bounding_box().radius());
+            // Object is centered around (0,0) in its current coordinate system.
+            last_pos.x() = 0;
+            last_pos.y() += coord_t(3. * m_layer->object()->bounding_box().radius());
             last_pos_weight = 5.f;
         }
 
@@ -3395,7 +3407,7 @@ const std::vector<GCode::ObjectByExtruder::Island::Region>& GCode::ObjectByExtru
             		if (this_override == nullptr || (*this_override)[copy] == -int(extruder)-1)
 	                    target_eec.emplace_back(entities[i]);
 	            }
-	            for (; i < overrides.size(); ++ i)
+	            for (; i < entities.size(); ++ i)
                     target_eec.emplace_back(entities[i]);
 		    }
         }

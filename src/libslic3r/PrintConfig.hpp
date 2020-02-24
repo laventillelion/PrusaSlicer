@@ -46,12 +46,6 @@ enum SeamPosition {
     spRandom, spNearest, spAligned, spRear
 };
 
-/*
-enum FilamentType {
-    ftPLA, ftABS, ftPET, ftHIPS, ftFLEX, ftSCAFF, ftEDGE, ftNGEN, ftPVA
-};
-*/
-
 enum SLAMaterial {
     slamTough,
     slamFlex,
@@ -148,24 +142,6 @@ template<> inline const t_config_enum_values& ConfigOptionEnum<SeamPosition>::ge
     }
     return keys_map;
 }
-
-/*
-template<> inline const t_config_enum_values& ConfigOptionEnum<FilamentType>::get_enum_values() {
-    static t_config_enum_values keys_map;
-    if (keys_map.empty()) {
-        keys_map["PLA"]             = ftPLA;
-        keys_map["ABS"]             = ftABS;
-        keys_map["PET"]             = ftPET;
-        keys_map["HIPS"]            = ftHIPS;
-        keys_map["FLEX"]            = ftFLEX;
-        keys_map["SCAFF"]           = ftSCAFF;
-        keys_map["EDGE"]            = ftEDGE;
-        keys_map["NGEN"]            = ftNGEN;
-        keys_map["PVA"]             = ftPVA;
-    }
-    return keys_map;
-}
-*/
 
 template<> inline const t_config_enum_values& ConfigOptionEnum<SLADisplayOrientation>::get_enum_values() {
     static const t_config_enum_values keys_map = {
@@ -354,6 +330,9 @@ protected:
 #define STATIC_PRINT_CONFIG_CACHE_BASE(CLASS_NAME) \
 public: \
     /* Overrides ConfigBase::optptr(). Find ando/or create a ConfigOption instance for a given name. */ \
+    const ConfigOption*      optptr(const t_config_option_key &opt_key) const override \
+        { return s_cache_##CLASS_NAME.optptr(opt_key, this); } \
+    /* Overrides ConfigBase::optptr(). Find ando/or create a ConfigOption instance for a given name. */ \
     ConfigOption*            optptr(const t_config_option_key &opt_key, bool create = false) override \
         { return s_cache_##CLASS_NAME.optptr(opt_key, this); } \
     /* Overrides ConfigBase::keys(). Collect names of all configuration values maintained by this configuration store. */ \
@@ -492,6 +471,7 @@ class PrintRegionConfig : public StaticPrintConfig
 public:
     ConfigOptionFloat               bridge_angle;
     ConfigOptionInt                 bottom_solid_layers;
+    ConfigOptionFloat               bottom_solid_min_thickness;
     ConfigOptionFloat               bridge_flow_ratio;
     ConfigOptionFloat               bridge_speed;
     ConfigOptionBool                ensure_vertical_shell_thickness;
@@ -527,6 +507,7 @@ public:
     ConfigOptionBool                thin_walls;
     ConfigOptionFloatOrPercent      top_infill_extrusion_width;
     ConfigOptionInt                 top_solid_layers;
+    ConfigOptionFloat 				top_solid_min_thickness;
     ConfigOptionFloatOrPercent      top_solid_infill_speed;
     ConfigOptionBool                wipe_into_infill;
 
@@ -535,6 +516,7 @@ protected:
     {
         OPT_PTR(bridge_angle);
         OPT_PTR(bottom_solid_layers);
+        OPT_PTR(bottom_solid_min_thickness);
         OPT_PTR(bridge_flow_ratio);
         OPT_PTR(bridge_speed);
         OPT_PTR(ensure_vertical_shell_thickness);
@@ -568,6 +550,7 @@ protected:
         OPT_PTR(top_infill_extrusion_width);
         OPT_PTR(top_solid_infill_speed);
         OPT_PTR(top_solid_layers);
+        OPT_PTR(top_solid_min_thickness);
         OPT_PTR(wipe_into_infill);
     }
 };
@@ -1197,6 +1180,8 @@ public:
     ConfigOptionBool                        display_mirror_y;
     ConfigOptionFloats                      relative_correction;
     ConfigOptionFloat                       absolute_correction;
+    ConfigOptionFloat                       elefant_foot_compensation;
+    ConfigOptionFloat                       elefant_foot_min_width;
     ConfigOptionFloat                       gamma_correction;
     ConfigOptionFloat                       fast_tilt_time;
     ConfigOptionFloat                       slow_tilt_time;
@@ -1220,6 +1205,8 @@ protected:
         OPT_PTR(display_orientation);
         OPT_PTR(relative_correction);
         OPT_PTR(absolute_correction);
+        OPT_PTR(elefant_foot_compensation);
+        OPT_PTR(elefant_foot_min_width);
         OPT_PTR(gamma_correction);
         OPT_PTR(fast_tilt_time);
         OPT_PTR(slow_tilt_time);

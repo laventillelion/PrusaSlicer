@@ -386,7 +386,8 @@ void Preset::set_visible_from_appconfig(const AppConfig &app_config)
 const std::vector<std::string>& Preset::print_options()
 {
     static std::vector<std::string> s_opts {
-        "layer_height", "first_layer_height", "perimeters", "spiral_vase", "slice_closing_radius", "top_solid_layers", "bottom_solid_layers",
+        "layer_height", "first_layer_height", "perimeters", "spiral_vase", "slice_closing_radius", 
+        "top_solid_layers", "top_solid_min_thickness", "bottom_solid_layers", "bottom_solid_min_thickness",
         "extra_perimeters", "ensure_vertical_shell_thickness", "avoid_crossing_perimeters", "thin_walls", "overhangs",
         "seam_position", "external_perimeters_first", "fill_density", "fill_pattern", "top_fill_pattern", "bottom_fill_pattern",
         "infill_every_layers", "infill_only_where_needed", "solid_infill_every_layers", "fill_angle", "bridge_angle",
@@ -556,6 +557,8 @@ const std::vector<std::string>& Preset::sla_printer_options()
             "fast_tilt_time", "slow_tilt_time", "area_fill",
             "relative_correction",
             "absolute_correction",
+            "elefant_foot_compensation",
+            "elefant_foot_min_width",
             "gamma_correction",
             "min_exposure_time", "max_exposure_time",
             "min_initial_exposure_time", "max_initial_exposure_time",
@@ -682,19 +685,51 @@ Preset& PresetCollection::load_preset(const std::string &path, const std::string
     return this->load_preset(path, name, std::move(cfg), select);
 }
 
-static bool profile_print_params_same(const DynamicPrintConfig &cfg1, const DynamicPrintConfig &cfg2)
+enum class ProfileHostParams
 {
-    t_config_option_keys diff = cfg1.diff(cfg2);
+	Same,
+	Different,
+	Anonymized,
+};
+
+static ProfileHostParams profile_host_params_same_or_anonymized(const DynamicPrintConfig &cfg_old, const DynamicPrintConfig &cfg_new)
+{
+	auto opt_print_host_old 	  = cfg_old.option<ConfigOptionString>("print_host");
+	auto opt_printhost_apikey_old = cfg_old.option<ConfigOptionString>("printhost_apikey");
+	auto opt_printhost_cafile_old = cfg_old.option<ConfigOptionString>("printhost_cafile");
+
+	auto opt_print_host_new 	  = cfg_new.option<ConfigOptionString>("print_host");
+	auto opt_printhost_apikey_new = cfg_new.option<ConfigOptionString>("printhost_apikey");
+	auto opt_printhost_cafile_new = cfg_new.option<ConfigOptionString>("printhost_cafile");
+
+	// If the new print host data is undefined, use the old data.
+	bool new_print_host_undefined = (opt_print_host_new 		== nullptr || opt_print_host_new		->empty()) &&
+									(opt_printhost_apikey_new 	== nullptr || opt_printhost_apikey_new	->empty()) &&
+									(opt_printhost_cafile_new 	== nullptr || opt_printhost_cafile_new	->empty());
+	if (new_print_host_undefined)
+		return ProfileHostParams::Anonymized;
+
+	auto opt_same = [](const ConfigOptionString *l, const ConfigOptionString *r) {
+		return ((l == nullptr || l->empty()) && (r == nullptr || r->empty())) ||
+			   (l != nullptr && r != nullptr && l->value == r->value);
+	};
+	return (opt_same(opt_print_host_old, opt_print_host_new) && opt_same(opt_printhost_apikey_old, opt_printhost_apikey_new) && 
+		    opt_same(opt_printhost_cafile_old, opt_printhost_cafile_new)) ? ProfileHostParams::Same : ProfileHostParams::Different;
+}
+
+static bool profile_print_params_same(const DynamicPrintConfig &cfg_old, const DynamicPrintConfig &cfg_new)
+{
+    t_config_option_keys diff = cfg_old.diff(cfg_new);
     // Following keys are used by the UI, not by the slicing core, therefore they are not important
     // when comparing profiles for equality. Ignore them.
     for (const char *key : { "compatible_prints", "compatible_prints_condition",
                              "compatible_printers", "compatible_printers_condition", "inherits",
                              "print_settings_id", "filament_settings_id", "sla_print_settings_id", "sla_material_settings_id", "printer_settings_id",
                              "printer_model", "printer_variant", "default_print_profile", "default_filament_profile", "default_sla_print_profile", "default_sla_material_profile",
-                             "printhost_apikey", "printhost_cafile" })
+                             "print_host", "printhost_apikey", "printhost_cafile" })
         diff.erase(std::remove(diff.begin(), diff.end(), key), diff.end());
     // Preset with the same name as stored inside the config exists.
-    return diff.empty();
+    return diff.empty() && profile_host_params_same_or_anonymized(cfg_old, cfg_new) != ProfileHostParams::Different;
 }
 
 // Load a preset from an already parsed config file, insert it into the sorted sequence of presets
@@ -723,11 +758,25 @@ Preset& PresetCollection::load_external_preset(
 		it = this->find_preset_renamed(original_name);
 		found = it != m_presets.end();
     }
-    if (found && profile_print_params_same(it->config, cfg)) {
-        // The preset exists and it matches the values stored inside config.
-        if (select)
-            this->select_preset(it - m_presets.begin());
-        return *it;
+    if (found) {
+    	if (profile_print_params_same(it->config, cfg)) {
+	        // The preset exists and it matches the values stored inside config.
+	        if (select)
+	            this->select_preset(it - m_presets.begin());
+	        return *it;
+	    }
+	    if (profile_host_params_same_or_anonymized(it->config, cfg) == ProfileHostParams::Anonymized) {
+	    	// The project being loaded is anonymized. Replace the empty host keys of the loaded profile with the data from the original profile.
+	    	// See "Octoprint Settings when Opening a .3MF file" GH issue #3244
+	    	auto opt_update = [it, &cfg](const std::string &opt_key) {
+				auto opt = it->config.option<ConfigOptionString>(opt_key);
+				if (opt != nullptr)
+					cfg.set_key_value(opt_key, opt->clone());
+	    	};
+	    	opt_update("print_host");
+	    	opt_update("printhost_apikey");
+	    	opt_update("printhost_cafile");
+	    }
     }
     // Update the "inherits" field.
     std::string &inherits = Preset::inherits(cfg);
@@ -1060,7 +1109,15 @@ void PresetCollection::update_plater_ui(GUI::PresetComboBox *ui)
         const Preset &preset = this->m_presets[i];
         if (! preset.is_visible || (! preset.is_compatible && i != m_idx_selected))
             continue;
+
         std::string   bitmap_key = "";
+        // !!! Temporary solution, till refactoring: create and use "sla_printer" icon instead of m_bitmap_main_frame
+        wxBitmap main_bmp = m_bitmap_main_frame ? *m_bitmap_main_frame : wxNullBitmap;
+        if (m_type == Preset::TYPE_PRINTER && preset.printer_technology()==ptSLA ) {
+            bitmap_key = "sla_printer";
+            main_bmp = create_scaled_bitmap("sla_printer");
+        }
+
         // If the filament preset is not compatible and there is a "red flag" icon loaded, show it left
         // to the filament color image.
         if (wide_icons)
@@ -1075,7 +1132,7 @@ void PresetCollection::update_plater_ui(GUI::PresetComboBox *ui)
                 bmps.emplace_back(preset.is_compatible ? m_bitmap_cache->mkclear(icon_width, icon_height) : *m_bitmap_incompatible);
             // Paint the color bars.
             bmps.emplace_back(m_bitmap_cache->mkclear(thin_space_icon_width, icon_height));
-            bmps.emplace_back(*m_bitmap_main_frame);
+            bmps.emplace_back(main_bmp);
             // Paint a lock at the system presets.
             bmps.emplace_back(m_bitmap_cache->mkclear(wide_space_icon_width, icon_height));
             bmps.emplace_back((preset.is_system || preset.is_default) ? *m_bitmap_lock : m_bitmap_cache->mkclear(icon_width, icon_height));
@@ -1085,7 +1142,7 @@ void PresetCollection::update_plater_ui(GUI::PresetComboBox *ui)
         const std::string name = preset.alias.empty() ? preset.name : preset.alias;
         if (preset.is_default || preset.is_system) {
             ui->Append(wxString::FromUTF8((/*preset.*/name + (preset.is_dirty ? g_suffix_modified : "")).c_str()),
-                (bmp == 0) ? (m_bitmap_main_frame ? *m_bitmap_main_frame : wxNullBitmap) : *bmp);
+                (bmp == 0) ? main_bmp : *bmp);
             if (i == m_idx_selected ||
                 // just in case: mark selected_preset_item as a first added element
                 selected_preset_item == INT_MAX) {
@@ -1115,13 +1172,13 @@ void PresetCollection::update_plater_ui(GUI::PresetComboBox *ui)
                 selected_preset_item = ui->GetCount() - 1;
         }
     }
-    if (m_type == Preset::TYPE_PRINTER) {
+    if (m_type == Preset::TYPE_PRINTER || m_type == Preset::TYPE_SLA_MATERIAL) {
         std::string   bitmap_key = "";
         // If the filament preset is not compatible and there is a "red flag" icon loaded, show it left
         // to the filament color image.
         if (wide_icons)
             bitmap_key += "wide,";
-        bitmap_key += "add_printer";
+        bitmap_key += "edit_preset_list";
         wxBitmap     *bmp = m_bitmap_cache->find(bitmap_key);
         if (bmp == nullptr) {
             // Create the bitmap with color bars.
@@ -1134,12 +1191,14 @@ void PresetCollection::update_plater_ui(GUI::PresetComboBox *ui)
             bmps.emplace_back(*m_bitmap_main_frame);
             // Paint a lock at the system presets.
             bmps.emplace_back(m_bitmap_cache->mkclear(wide_space_icon_width, icon_height));
-            bmps.emplace_back(m_bitmap_add ? *m_bitmap_add : wxNullBitmap);
+//            bmps.emplace_back(m_bitmap_add ? *m_bitmap_add : wxNullBitmap);
+            bmps.emplace_back(create_scaled_bitmap("edit_uni"));
             bmp = m_bitmap_cache->insert(bitmap_key, bmps);
         }
-        ui->set_label_marker(ui->Append(PresetCollection::separator(L("Add a new printer")), *bmp), GUI::PresetComboBox::LABEL_ITEM_WIZARD_PRINTERS);
-    } else if (m_type == Preset::TYPE_SLA_MATERIAL) {
-        ui->set_label_marker(ui->Append(PresetCollection::separator(L("Add/Remove materials")), wxNullBitmap), GUI::PresetComboBox::LABEL_ITEM_WIZARD_MATERIALS);
+        if (m_type == Preset::TYPE_SLA_MATERIAL)
+            ui->set_label_marker(ui->Append(PresetCollection::separator(L("Add/Remove materials")), *bmp), GUI::PresetComboBox::LABEL_ITEM_WIZARD_MATERIALS);
+        else
+            ui->set_label_marker(ui->Append(PresetCollection::separator(L("Add/Remove printers")), *bmp), GUI::PresetComboBox::LABEL_ITEM_WIZARD_PRINTERS);
     }
 
     /* But, if selected_preset_item is still equal to INT_MAX, it means that
@@ -1184,6 +1243,14 @@ size_t PresetCollection::update_tab_ui(wxBitmapComboBox *ui, bool show_incompati
         if (! preset.is_visible || (! show_incompatible && ! preset.is_compatible && i != m_idx_selected))
             continue;
         std::string   bitmap_key = "tab";
+
+        // !!! Temporary solution, till refactoring: create and use "sla_printer" icon instead of m_bitmap_main_frame
+        wxBitmap main_bmp = m_bitmap_main_frame ? *m_bitmap_main_frame : wxNullBitmap;
+        if (m_type == Preset::TYPE_PRINTER && preset.printer_technology() == ptSLA) {
+            bitmap_key = "sla_printer";
+            main_bmp = create_scaled_bitmap("sla_printer");
+        }
+
         bitmap_key += preset.is_compatible ? ",cmpt" : ",ncmpt";
         bitmap_key += (preset.is_system || preset.is_default) ? ",syst" : ",nsyst";
         wxBitmap     *bmp = m_bitmap_cache->find(bitmap_key);
@@ -1191,7 +1258,7 @@ size_t PresetCollection::update_tab_ui(wxBitmapComboBox *ui, bool show_incompati
             // Create the bitmap with color bars.
             std::vector<wxBitmap> bmps;
             const wxBitmap* tmp_bmp = preset.is_compatible ? m_bitmap_compatible : m_bitmap_incompatible;
-            bmps.emplace_back((tmp_bmp == 0) ? (m_bitmap_main_frame ? *m_bitmap_main_frame : wxNullBitmap) : *tmp_bmp);
+            bmps.emplace_back((tmp_bmp == 0) ? main_bmp : *tmp_bmp);
             // Paint a lock at the system presets.
             bmps.emplace_back((preset.is_system || preset.is_default) ? *m_bitmap_lock : m_bitmap_cache->mkclear(icon_width, icon_height));
             bmp = m_bitmap_cache->insert(bitmap_key, bmps);
@@ -1199,7 +1266,7 @@ size_t PresetCollection::update_tab_ui(wxBitmapComboBox *ui, bool show_incompati
 
         if (preset.is_default || preset.is_system) {
             ui->Append(wxString::FromUTF8((preset.name + (preset.is_dirty ? g_suffix_modified : "")).c_str()),
-                (bmp == 0) ? (m_bitmap_main_frame ? *m_bitmap_main_frame : wxNullBitmap) : *bmp);
+                (bmp == 0) ? main_bmp : *bmp);
             if (i == m_idx_selected ||
                 // just in case: mark selected_preset_item as a first added element
                 selected_preset_item == INT_MAX)
@@ -1226,12 +1293,13 @@ size_t PresetCollection::update_tab_ui(wxBitmapComboBox *ui, bool show_incompati
         }
     }
     if (m_type == Preset::TYPE_PRINTER) {
-        wxBitmap *bmp = m_bitmap_cache->find("add_printer_tab");
+        wxBitmap *bmp = m_bitmap_cache->find("edit_printer_list");
         if (bmp == nullptr) {
             // Create the bitmap with color bars.
             std::vector<wxBitmap> bmps;
             bmps.emplace_back(*m_bitmap_main_frame);
-            bmps.emplace_back(m_bitmap_add ? *m_bitmap_add : wxNullBitmap);
+//            bmps.emplace_back(m_bitmap_add ? *m_bitmap_add : wxNullBitmap);
+            bmps.emplace_back(create_scaled_bitmap("edit_uni"));
             bmp = m_bitmap_cache->insert("add_printer_tab", bmps);
         }
         ui->Append(PresetCollection::separator("Add a new printer"), *bmp);
@@ -1304,7 +1372,7 @@ inline t_config_option_keys deep_diff(const ConfigBase &config_this, const Confi
         const ConfigOption *other_opt = config_other.option(opt_key);
         if (this_opt != nullptr && other_opt != nullptr && *this_opt != *other_opt)
         {
-            if (opt_key == "bed_shape" || opt_key == "compatible_prints" || opt_key == "compatible_printers") {
+            if (opt_key == "bed_shape" || opt_key == "thumbnails" || opt_key == "compatible_prints" || opt_key == "compatible_printers") {
                 diff.emplace_back(opt_key);
                 continue;
             }

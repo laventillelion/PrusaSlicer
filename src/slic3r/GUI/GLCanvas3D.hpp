@@ -91,6 +91,7 @@ wxDECLARE_EVENT(EVT_GLCANVAS_SELECT_ALL, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_QUESTION_MARK, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_INCREASE_INSTANCES, Event<int>); // data: +1 => increase, -1 => decrease
 wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_MOVED, SimpleEvent);
+wxDECLARE_EVENT(EVT_GLCANVAS_FORCE_UPDATE, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_WIPETOWER_MOVED, Vec3dEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_ROTATED, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_SCALED, SimpleEvent);
@@ -374,6 +375,20 @@ private:
     };
 #endif // ENABLE_RENDER_STATISTICS
 
+    class Labels
+    {
+        bool m_enabled{ false };
+        bool m_shown{ false };
+        GLCanvas3D& m_canvas;
+
+    public:
+        explicit Labels(GLCanvas3D& canvas) : m_canvas(canvas) {}
+        void enable(bool enable) { m_enabled = enable; }
+        void show(bool show) { m_shown = m_enabled ? show : false; }
+        bool is_shown() const { return m_shown; }
+        void render(const std::vector<const ModelInstance*>& sorted_instances) const;
+    };
+
 public:
     enum ECursorType : unsigned char
     {
@@ -451,6 +466,8 @@ private:
     mutable int m_imgui_undo_redo_hovered_pos{ -1 };
     int m_selected_extruder;
 
+    Labels m_labels;
+
 public:
     GLCanvas3D(wxGLCanvas* canvas, Bed3D& bed, Camera& camera, GLToolbar& view_toolbar);
     ~GLCanvas3D();
@@ -466,6 +483,7 @@ public:
     void set_as_dirty();
 
     unsigned int get_volumes_count() const;
+    const GLVolumeCollection& get_volumes() const { return m_volumes; }
     void reset_volumes();
     int check_volumes_outside_state() const;
 
@@ -477,6 +495,7 @@ public:
     void set_config(const DynamicPrintConfig* config);
     void set_process(BackgroundSlicingProcess* process);
     void set_model(Model* model);
+    const Model* get_model() const { return m_model; }
 
     const Selection& get_selection() const { return m_selection; }
     Selection& get_selection() { return m_selection; }
@@ -524,6 +543,7 @@ public:
     void enable_main_toolbar(bool enable);
     void enable_undoredo_toolbar(bool enable);
     void enable_dynamic_background(bool enable);
+    void enable_labels(bool enable) { m_labels.enable(enable); }
     void allow_multisample(bool allow);
 
     void zoom_to_bed();
@@ -644,6 +664,9 @@ public:
     void export_toolpaths_to_obj(const char* filename) const;
 
     void mouse_up_cleanup();
+
+    bool are_labels_shown() const { return m_labels.is_shown(); }
+    void show_labels(bool show) { m_labels.show(show); }
 
 private:
     bool _is_shown_on_screen() const;

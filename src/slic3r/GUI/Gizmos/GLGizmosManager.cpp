@@ -348,8 +348,13 @@ void GLGizmosManager::set_sla_support_data(ModelObject* model_object)
     if (!m_enabled || m_gizmos.empty())
         return;
 
-    dynamic_cast<GLGizmoSlaSupports*>(m_gizmos[SlaSupports].get())->set_sla_support_data(model_object, m_parent.get_selection());
-    dynamic_cast<GLGizmoHollow*>(m_gizmos[Hollow].get())->set_sla_support_data(model_object, m_parent.get_selection());
+    auto* gizmo_supports = dynamic_cast<GLGizmoSlaSupports*>(m_gizmos[SlaSupports].get());
+    auto* gizmo_hollow = dynamic_cast<GLGizmoHollow*>(m_gizmos[Hollow].get());
+
+    // note: sla support gizmo takes care of updating the common data.
+    // following lines are thus dependent
+    gizmo_supports->set_sla_support_data(model_object, m_parent.get_selection());
+    gizmo_hollow->set_sla_support_data(model_object, m_parent.get_selection());
 }
 
 // Returns true if the gizmo used the event to do something, false otherwise.
@@ -497,7 +502,7 @@ bool GLGizmosManager::on_mouse(wxMouseEvent& evt)
             processed = true;
         }
         else if (evt.Dragging() && (m_parent.get_move_volume_id() != -1) && (m_current == SlaSupports || m_current == Hollow))
-                        // don't allow dragging objects with the Sla gizmo on
+            // don't allow dragging objects with the Sla gizmo on
             processed = true;
         else if (evt.Dragging() && (m_current == SlaSupports || m_current == Hollow) && gizmo_event(SLAGizmoEventType::Dragging, mouse_pos, evt.ShiftDown(), evt.AltDown(), evt.ControlDown()))
         {
@@ -554,12 +559,9 @@ bool GLGizmosManager::on_mouse(wxMouseEvent& evt)
         else if (evt.LeftUp() && is_dragging())
         {
             switch (m_current) {
-            case Move : m_parent.do_move(L("Gizmo-Move"));
-                        break;
-            case Scale : m_parent.do_scale(L("Gizmo-Scale"));
-                         break;
-            case Rotate : m_parent.do_rotate(L("Gizmo-Rotate"));
-                          break;
+            case Move : m_parent.do_move(L("Gizmo-Move")); break;
+            case Scale : m_parent.do_scale(L("Gizmo-Scale")); break;
+            case Rotate : m_parent.do_rotate(L("Gizmo-Rotate")); break;
             default : break;
             }
 
@@ -788,6 +790,21 @@ bool GLGizmosManager::on_key(wxKeyEvent& evt)
 //            m_parent.set_cursor(GLCanvas3D::Cross);
             processed = true;
         }
+        else if (m_current == Cut)
+        {
+            auto do_move = [this, &processed](double delta_z) {
+                GLGizmoCut* cut = dynamic_cast<GLGizmoCut*>(get_current());
+                cut->set_cut_z(delta_z + cut->get_cut_z());
+                processed = true;
+            };
+
+            switch (keyCode)
+            {
+            case WXK_NUMPAD_UP:   case WXK_UP:   { do_move(1.0); break; }
+            case WXK_NUMPAD_DOWN: case WXK_DOWN: { do_move(-1.0); break; }
+            default: { break; }
+            }
+        }
     }
 
     if (processed)
@@ -861,14 +878,9 @@ void GLGizmosManager::render_background(float left, float top, float right, floa
 
 void GLGizmosManager::do_render_overlay() const
 {
-#if ENABLE_MODIFIED_TOOLBAR_TEXTURES
     std::vector<size_t> selectable_idxs = get_selectable_idxs();
     if (selectable_idxs.empty())
         return;
-#else
-    if (m_gizmos.empty())
-        return;
-#endif // ENABLE_MODIFIED_TOOLBAR_TEXTURES
 
     float cnv_w = (float)m_parent.get_canvas_size().get_width();
     float cnv_h = (float)m_parent.get_canvas_size().get_height();
@@ -900,7 +912,6 @@ void GLGizmosManager::do_render_overlay() const
     int tex_width = m_icons_texture.get_width();
     int tex_height = m_icons_texture.get_height();
 
-#if ENABLE_MODIFIED_TOOLBAR_TEXTURES
     if ((icons_texture_id == 0) || (tex_width <= 1) || (tex_height <= 1))
         return;
 
@@ -910,39 +921,18 @@ void GLGizmosManager::do_render_overlay() const
     // tiles in the texture are spaced by 1 pixel
     float u_offset = 1.0f / (float)tex_width;
     float v_offset = 1.0f / (float)tex_height;
-#else
-    if ((icons_texture_id == 0) || (tex_width <= 0) || (tex_height <= 0))
-        return;
 
-    float inv_tex_width = (tex_width != 0) ? 1.0f / tex_width : 0.0f;
-    float inv_tex_height = (tex_height != 0) ? 1.0f / tex_height : 0.0f;
-#endif // ENABLE_MODIFIED_TOOLBAR_TEXTURES
-
-#if ENABLE_MODIFIED_TOOLBAR_TEXTURES
     for (size_t idx : selectable_idxs)
-#else
-    for (size_t idx : get_selectable_idxs())
-#endif // ENABLE_MODIFIED_TOOLBAR_TEXTURES
     {
         GLGizmoBase* gizmo = m_gizmos[idx].get();
 
         unsigned int sprite_id = gizmo->get_sprite_id();
         int icon_idx = (m_current == idx) ? 2 : ((m_hover == idx) ? 1 : (gizmo->is_activable()? 0 : 3));
 
-#if ENABLE_MODIFIED_TOOLBAR_TEXTURES
         float v_top = v_offset + sprite_id * dv;
         float u_left = u_offset + icon_idx * du;
         float v_bottom = v_top + dv - v_offset;
         float u_right = u_left + du - u_offset;
-#else
-        float u_icon_size = icons_size * inv_tex_width;
-        float v_icon_size = icons_size * inv_tex_height;
-
-        float v_top = sprite_id * v_icon_size;
-        float u_left = icon_idx * u_icon_size;
-        float v_bottom = v_top + v_icon_size;
-        float u_right = u_left + u_icon_size;
-#endif // ENABLE_MODIFIED_TOOLBAR_TEXTURES
 
         GLTexture::render_sub_texture(icons_texture_id, zoomed_top_x, zoomed_top_x + zoomed_icons_size, zoomed_top_y - zoomed_icons_size, zoomed_top_y, { { u_left, v_bottom }, { u_right, v_bottom }, { u_right, v_top }, { u_left, v_top } });
         if (idx == m_current) {
