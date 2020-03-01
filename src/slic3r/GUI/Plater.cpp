@@ -262,6 +262,11 @@ PresetBitmapComboBox(parent, wxSize(15 * wxGetApp().em_unit(), -1)),
     m_em_unit(wxGetApp().em_unit())
 {
     SetFont(wxGetApp().normal_font());
+#ifdef _WIN32
+    // Workaround for ignoring CBN_EDITCHANGE events, which are processed after the content of the combo box changes, so that
+    // the index of the item inside CBN_EDITCHANGE may no more be valid.
+    EnableTextChangedEvents(false);
+#endif /* _WIN32 */
     Bind(wxEVT_COMBOBOX, [this](wxCommandEvent &evt) {
         auto selected_item = this->GetSelection();
 
@@ -871,7 +876,7 @@ Sidebar::Sidebar(Plater *parent)
     };
 
     init_scalable_btn(&p->btn_send_gcode   , "export_gcode", _(L("Send to printer")) + "\tCtrl+Shift+G");
-    init_scalable_btn(&p->btn_remove_device, "cross"       , _(L("Remove device")));
+    init_scalable_btn(&p->btn_remove_device, "eject_sd"       , _(L("Remove device")));
 	init_scalable_btn(&p->btn_export_gcode_removable, "export_to_sd", _(L("Export to SD card / Flash drive")));
 
     // regular buttons "Slice now" and "Export G-code" 
@@ -3267,7 +3272,7 @@ void Plater::priv::reload_from_disk()
             else
                 missing_input_paths.push_back(volume->source.input_file);
         }
-        else if (!object->input_file.empty() && !volume->name.empty())
+        else if (!object->input_file.empty() && volume->is_model_part() && !volume->name.empty())
             missing_input_paths.push_back(volume->name);
     }
 
@@ -3331,7 +3336,7 @@ void Plater::priv::reload_from_disk()
         const auto& path = input_paths[i].string();
 
         wxBusyCursor wait;
-        wxBusyInfo info(_(L("Reload from: ")) + from_u8(path), q->get_current_canvas3D()->get_wxglcanvas());
+        wxBusyInfo info(_(L("Reload from:")) + " " + from_u8(path), q->get_current_canvas3D()->get_wxglcanvas());
 
         Model new_model;
         try
@@ -5194,11 +5199,10 @@ void Plater::drive_ejected_callback()
 	if (RemovableDriveManager::get_instance().get_did_eject())
 	{
         RemovableDriveManager::get_instance().set_did_eject(false);
-        wxString message = wxString::Format(
-            _(L("Unmounting successful. The device %s(%s) can now be safely removed from the computer.")),
-            RemovableDriveManager::get_instance().get_ejected_name(),
-            RemovableDriveManager::get_instance().get_ejected_path());
-		wxMessageBox(message);
+        show_info(this,
+        	(boost::format(_utf8(L("Unmounting successful. The device %s(%s) can now be safely removed from the computer."))) 
+            	% RemovableDriveManager::get_instance().get_ejected_name()
+            	% RemovableDriveManager::get_instance().get_ejected_path()).str());
 	}
 	p->show_action_buttons(false);
 }
@@ -5586,6 +5590,7 @@ void Plater::suppress_background_process(const bool stop_background_process)
 void Plater::fix_through_netfabb(const int obj_idx, const int vol_idx/* = -1*/) { p->fix_through_netfabb(obj_idx, vol_idx); }
 
 void Plater::update_object_menu() { p->update_object_menu(); }
+void Plater::show_action_buttons(const bool is_ready_to_slice) const { p->show_action_buttons(is_ready_to_slice); }
 
 void Plater::copy_selection_to_clipboard()
 {

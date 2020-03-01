@@ -17,11 +17,10 @@
 namespace Slic3r {
 namespace GUI {
 
-GLGizmoHollow::GLGizmoHollow(GLCanvas3D& parent, const std::string& icon_filename, unsigned int sprite_id, CommonGizmosData* cd)
-    : GLGizmoBase(parent, icon_filename, sprite_id, cd)
+GLGizmoHollow::GLGizmoHollow(GLCanvas3D& parent, const std::string& icon_filename, unsigned int sprite_id)
+    : GLGizmoBase(parent, icon_filename, sprite_id)
     , m_quadric(nullptr)
 {
-    m_c->m_clipping_plane.reset(new ClippingPlane(Vec3d::Zero(), 0.));
     m_quadric = ::gluNewQuadric();
     if (m_quadric != nullptr)
         // using GLU_FILL does not work when the instance's transformation
@@ -63,22 +62,25 @@ void GLGizmoHollow::set_sla_support_data(ModelObject*, const Selection&)
 
         update_clipping_plane(m_c->m_clipping_plane_was_moved);
 
+        // This is a temporary and not very nice hack, to make sure that
+        // if the cp was moved by the data returned by backend, it will
+        // remember its direction. FIXME: Refactor this mess and make
+        // the clipping plane itself part of the shared data.
+        if (! m_c->m_clipping_plane_was_moved && m_c->m_clipping_plane_distance == 0.25f)
+            m_c->m_clipping_plane_was_moved = true;
+
+
         if (m_c->m_model_object) {
             reload_cache();
             if (m_c->has_drilled_mesh())
                 m_holes_in_drilled_mesh = m_c->m_model_object->sla_drain_holes;
         }
+    }
 
-        if (m_state == On) {
-            m_parent.toggle_model_objects_visibility(false);
-            m_parent.toggle_model_objects_visibility(true, m_c->m_model_object, m_c->m_active_instance);
-            m_parent.toggle_sla_auxiliaries_visibility(m_show_supports, m_c->m_model_object, m_c->m_active_instance);
-        }
-        // following was removed so that it does not show the object when it should
-        // be hidden because the supports gizmo is active. on_set_state takes care
-        // of showing the object.
-        //else
-          //  m_parent.toggle_model_objects_visibility(true, nullptr, -1);
+    if (m_state == On) {
+        m_parent.toggle_model_objects_visibility(false);
+        m_parent.toggle_model_objects_visibility(true, m_c->m_model_object, m_c->m_active_instance);
+        m_parent.toggle_sla_auxiliaries_visibility(m_show_supports, m_c->m_model_object, m_c->m_active_instance);
     }
 }
 
@@ -752,14 +754,16 @@ RENDER_AGAIN:
     }
 
     m_imgui->disabled_begin(! m_enable_hollowing);
-
+    float max_tooltip_width = ImGui::GetFontSize() * 20.0f;
     m_imgui->text(m_desc.at("offset"));
     ImGui::SameLine(settings_sliders_left);
     ImGui::PushItemWidth(window_width - settings_sliders_left);
     ImGui::SliderFloat("   ", &offset, offset_min, offset_max, "%.1f mm");
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
-        ImGui::TextUnformatted(_(opts[0].second->tooltip).ToUTF8());
+        ImGui::PushTextWrapPos(max_tooltip_width);
+        ImGui::TextUnformatted((_utf8(opts[0].second->tooltip)).c_str());
+        ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
     bool slider_clicked = ImGui::IsItemClicked(); // someone clicked the slider
@@ -772,7 +776,9 @@ RENDER_AGAIN:
         ImGui::SliderFloat("    ", &quality, quality_min, quality_max, "%.1f");
         if (ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
-            ImGui::TextUnformatted(_(opts[1].second->tooltip).ToUTF8());
+            ImGui::PushTextWrapPos(max_tooltip_width);
+            ImGui::TextUnformatted((_utf8(opts[1].second->tooltip)).c_str());
+            ImGui::PopTextWrapPos();
             ImGui::EndTooltip();
         }
         slider_clicked |= ImGui::IsItemClicked();
@@ -786,7 +792,9 @@ RENDER_AGAIN:
         ImGui::SliderFloat("      ", &closing_d, closing_d_min, closing_d_max, "%.1f mm");
         if (ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
-            ImGui::TextUnformatted(_(opts[2].second->tooltip).ToUTF8());
+            ImGui::PushTextWrapPos(max_tooltip_width);
+            ImGui::TextUnformatted((_utf8(opts[2].second->tooltip)).c_str());
+            ImGui::PopTextWrapPos();
             ImGui::EndTooltip();
         }
         slider_clicked |= ImGui::IsItemClicked();
@@ -1138,6 +1146,13 @@ void GLGizmoHollow::update_clipping_plane(bool keep_normal) const
     float dist = normal.dot(center);
     *m_c->m_clipping_plane = ClippingPlane(normal, (dist - (-m_c->m_active_instance_bb_radius) - m_c->m_clipping_plane_distance * 2*m_c->m_active_instance_bb_radius));
     m_parent.set_as_dirty();
+}
+
+
+void GLGizmoHollow::on_set_hover_id()
+{
+    if (int(m_c->m_model_object->sla_drain_holes.size()) <= m_hover_id)
+        m_hover_id = -1;
 }
 
 
