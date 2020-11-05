@@ -805,6 +805,7 @@ public:
     ConfigOptionBools               retract_layer_change;
     ConfigOptionFloat               skirt_distance;
     ConfigOptionInt                 skirt_height;
+    ConfigOptionBool                draft_shield;
     ConfigOptionInt                 skirts;
     ConfigOptionInts                slowdown_below_layer_time;
     ConfigOptionBool                spiral_vase;
@@ -877,6 +878,7 @@ protected:
         OPT_PTR(retract_layer_change);
         OPT_PTR(skirt_distance);
         OPT_PTR(skirt_height);
+        OPT_PTR(draft_shield);
         OPT_PTR(skirts);
         OPT_PTR(slowdown_below_layer_time);
         OPT_PTR(spiral_vase);
@@ -985,6 +987,9 @@ public:
 
     // Radius in mm of the support pillars.
     ConfigOptionFloat support_pillar_diameter /*= 0.8*/;
+    
+    // How much bridge (supporting another pinhead) can be placed on a pillar.
+    ConfigOptionInt   support_max_bridges_on_pillar;
 
     // How the pillars are bridged together
     ConfigOptionEnum<SLAPillarConnectionMode> support_pillar_connection_mode;
@@ -1106,6 +1111,7 @@ protected:
         OPT_PTR(support_head_penetration);
         OPT_PTR(support_head_width);
         OPT_PTR(support_pillar_diameter);
+        OPT_PTR(support_max_bridges_on_pillar);
         OPT_PTR(support_pillar_connection_mode);
         OPT_PTR(support_buildplate_only);
         OPT_PTR(support_pillar_widening_factor);

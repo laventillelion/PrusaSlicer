@@ -172,7 +172,7 @@ void Field::get_value_by_opt_type(wxString& str, const bool check_value/* = true
 			if		(label.Last() == '\n')	label.RemoveLast();
 			while	(label.Last() == ' ')	label.RemoveLast();
 			if		(label.Last() == ':')	label.RemoveLast();
-			show_error(m_parent, wxString::Format(_(L("%s doesn't support percentage")), label));
+            show_error(m_parent, from_u8((boost::format(_utf8(L("%s doesn't support percentage"))) % label).str()));
 			set_value(double_to_string(m_opt.min), true);
 			m_value = double(m_opt.min);
 			break;
@@ -237,12 +237,12 @@ void Field::get_value_by_opt_type(wxString& str, const bool check_value/* = true
 
                 const std::string sidetext = m_opt.sidetext.rfind("mm/s") != std::string::npos ? "mm/s" : "mm";
                 const wxString stVal = double_to_string(val, 2);
-                const wxString msg_text = wxString::Format(_(L("Do you mean %s%% instead of %s %s?\n"
+                const wxString msg_text = from_u8((boost::format(_utf8(L("Do you mean %s%% instead of %s %s?\n"
                     "Select YES if you want to change this value to %s%%, \n"
-                    "or NO if you are sure that %s %s is a correct value.")), stVal, stVal, sidetext, stVal, stVal, sidetext);
+                    "or NO if you are sure that %s %s is a correct value."))) % stVal % stVal % sidetext % stVal % stVal % sidetext).str());
                 wxMessageDialog dialog(m_parent, msg_text, _(L("Parameter validation")) + ": " + m_opt_id , wxICON_WARNING | wxYES | wxNO);
                 if (dialog.ShowModal() == wxID_YES) {
-                    set_value(wxString::Format("%s%%", stVal), false/*true*/);
+                    set_value(from_u8((boost::format("%s%%") % stVal).str()), false/*true*/);
                     str += "%%";
                 }
 				else
@@ -375,12 +375,11 @@ void TextCtrl::BUILD() {
 	{
 		e.Skip();
 #ifdef __WXOSX__
-		// OSX issue: For some unknown reason wxEVT_KILL_FOCUS is emitted twice in a row
+		// OSX issue: For some unknown reason wxEVT_KILL_FOCUS is emitted twice in a row in some cases 
+	    // (like when information dialog is shown during an update of the option value)
 		// Thus, suppress its second call
-		if (bKilledFocus) {
-			bKilledFocus = false;
+		if (bKilledFocus)
 			return;
-		}
 		bKilledFocus = true;
 #endif // __WXOSX__
 
@@ -391,6 +390,10 @@ void TextCtrl::BUILD() {
             bEnterPressed = false;
 		else
             propagate_value();
+#ifdef __WXOSX__
+		// After processing of KILL_FOCUS event we should to invalidate a bKilledFocus flag
+		bKilledFocus = false;
+#endif // __WXOSX__
 	}), temp->GetId());
 
 	// select all text using Ctrl+A
