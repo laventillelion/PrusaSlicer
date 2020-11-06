@@ -33,11 +33,11 @@ class Mouse3DController
 	struct Params
 	{
 		static constexpr double DefaultTranslationScale = 2.5;
-		static constexpr double MaxTranslationDeadzone = 0.2;
-		static constexpr double DefaultTranslationDeadzone = 0.5 * MaxTranslationDeadzone;
+        static constexpr double MaxTranslationDeadzone = 0.0;
+        static constexpr double DefaultTranslationDeadzone = 0.5 * MaxTranslationDeadzone;
 		static constexpr float  DefaultRotationScale = 1.0f;
-		static constexpr float  MaxRotationDeadzone = 0.2f;
-		static constexpr float  DefaultRotationDeadzone = 0.5f * MaxRotationDeadzone;
+        static constexpr float  MaxRotationDeadzone = 0.0f;
+        static constexpr float  DefaultRotationDeadzone = 0.5f * MaxRotationDeadzone;
 		static constexpr double DefaultZoomScale = 0.1;
 
         template <typename Number>
@@ -190,8 +190,13 @@ public:
 #endif // __APPLE__
 
 #ifdef WIN32
+	bool handle_raw_input_win32(const unsigned char *data, const int packet_lenght);
+
     // Called by Win32 HID enumeration callback.
     void device_attached(const std::string &device);
+#if ENABLE_CTRL_M_ON_WINDOWS
+    void device_detached(const std::string& device);
+#endif // ENABLE_CTRL_M_ON_WINDOWS
 
     // On Windows, the 3DConnexion driver sends out mouse wheel rotation events to an active application
     // if the application does not register at the driver. This is a workaround to ignore these superfluous
@@ -218,10 +223,9 @@ private:
     typedef std::array<unsigned char, 13> DataPacketRaw;
 
 	// Unpack raw 3DConnexion HID packet of a wired 3D mouse into m_state. Called by the worker thread.
-    static bool handle_input(const DataPacketRaw& packet, const int packet_lenght, const Params &params, State &state_in_out);
+    static bool handle_input(const DataPacketRaw& packet, const int packet_length, const Params &params, State &state_in_out);
     // The following is called by handle_input() from the worker thread.
-    static bool handle_packet(const DataPacketRaw& packet, const Params &params, State &state_in_out);
-    static bool handle_wireless_packet(const DataPacketRaw& packet, const Params &params, State &state_in_out);
+    static bool handle_packet(const DataPacketRaw& packet, const int packet_length, const Params &params, State &state_in_out);
     static bool handle_packet_translation(const DataPacketRaw& packet, const Params &params, State &state_in_out);
     static bool handle_packet_rotation(const DataPacketRaw& packet, unsigned int first_byte, const Params &params, State &state_in_out);
     static bool handle_packet_button(const DataPacketRaw& packet, unsigned int packet_size, const Params &params, State &state_in_out);
