@@ -189,10 +189,10 @@ PhysicalPrinterDialog::PhysicalPrinterDialog(wxWindow* parent, wxString printer_
     }
     else
     {
+        m_printer = *printer;
         const std::set<std::string>& preset_names = printer->get_preset_names();
         for (const std::string& preset_name : preset_names)
             m_presets.emplace_back(new PresetForPrinter(this, preset_name));
-        m_printer = *printer;
     }
 
     if (m_presets.size() == 1)
@@ -257,7 +257,7 @@ void PhysicalPrinterDialog::update_printers()
             printers.clear();
     } catch (const HostNetworkError &err) {
         printers.clear();
-        show_error(this, _L("Querying printers connected to a print host failed.") + "\n\n" + from_u8(err.what()));
+        show_error(this, _L("Connection to printers connected via the print host failed.") + "\n\n" + from_u8(err.what()));
     }
     Choice *choice = dynamic_cast<Choice*>(rs);
     choice->set_values(printers);
@@ -269,6 +269,8 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
     m_optgroup->m_on_change = [this](t_config_option_key opt_key, boost::any value) {
         if (opt_key == "host_type" || opt_key == "printhost_authorization_type")
             this->update();
+        if (opt_key == "print_host")
+            this->update_printhost_buttons();
     };
 
     m_optgroup->append_single_option_line("host_type");
@@ -413,6 +415,23 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
 
     m_optgroup->activate();
 
+    Field* printhost_field = m_optgroup->get_field("print_host");
+    if (printhost_field)
+    {
+        wxTextCtrl* temp = dynamic_cast<wxTextCtrl*>(printhost_field->getWindow());
+        if (temp)
+            temp->Bind(wxEVT_TEXT, ([this, printhost_field, temp](wxEvent& e)
+            {
+#ifndef __WXGTK__
+                e.Skip();
+                temp->GetToolTip()->Enable(true);
+#endif // __WXGTK__
+                TextCtrl* field = dynamic_cast<TextCtrl*>(printhost_field);
+                if (field)
+                    field->propagate_value();
+            }), temp->GetId());
+    }
+
     // Always fill in the "printhost_port" combo box from the config and select it.
     {
         Choice* choice = dynamic_cast<Choice*>(m_optgroup->get_field("printhost_port"));
@@ -421,6 +440,13 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
     }
 
     update();
+}
+
+void PhysicalPrinterDialog::update_printhost_buttons()
+{
+    std::unique_ptr<PrintHost> host(PrintHost::get_print_host(m_config));
+    m_printhost_test_btn->Enable(!m_config->opt_string("print_host").empty() && host->can_test());
+    m_printhost_browse_btn->Enable(host->has_auto_discovery());
 }
 
 void PhysicalPrinterDialog::update()
@@ -455,9 +481,7 @@ void PhysicalPrinterDialog::update()
     m_optgroup->show_field("printhost_port", supports_multiple_printers);
     m_printhost_port_browse_btn->Show(supports_multiple_printers);
 
-    std::unique_ptr<PrintHost> host(PrintHost::get_print_host(m_config));
-    m_printhost_test_btn->Enable(!m_config->opt_string("print_host").empty() && host->can_test());
-    m_printhost_browse_btn->Enable(host->has_auto_discovery());
+    update_printhost_buttons();
 
     this->SetSize(this->GetBestSize());
     this->Layout();
@@ -552,10 +576,10 @@ void PhysicalPrinterDialog::OnOK(wxEvent& event)
             repeatable_presets += "    " + from_u8(preset_name) + "\n";
         repeatable_presets += "\n";
 
-        wxString msg_text = from_u8((boost::format(_u8L("Next printer preset(s) is(are) duplicated:%1%"
-                                                        "Should I add it(they) just once for the printer \"%2%\" and close the Editing Dialog?")) % repeatable_presets % printer_name).str());
-        wxMessageDialog dialog(nullptr, msg_text, _L("Warning"), wxICON_WARNING | wxYES | wxNO);
-        if (dialog.ShowModal() == wxID_NO)
+        wxString msg_text = from_u8((boost::format(_u8L("Following printer preset(s) is duplicated:%1%"
+                                                        "The above preset for printer \"%2%\" will be used just once.")) % repeatable_presets % printer_name).str());
+        wxMessageDialog dialog(nullptr, msg_text, _L("Warning"), wxICON_WARNING | wxOK | wxCANCEL);
+        if (dialog.ShowModal() == wxID_CANCEL)
             return;
     }
 
@@ -599,7 +623,7 @@ void PhysicalPrinterDialog::DeletePreset(PresetForPrinter* preset_for_printer)
 {
     if (m_presets.size() == 1) {
         wxString msg_text = _L("It's not possible to delete the last related preset for the printer.");
-        wxMessageDialog dialog(nullptr, msg_text, _L("Infornation"), wxICON_INFORMATION | wxOK);
+        wxMessageDialog dialog(nullptr, msg_text, _L("Information"), wxICON_INFORMATION | wxOK);
         dialog.ShowModal();
         return;
     }

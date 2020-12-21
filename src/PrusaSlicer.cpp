@@ -34,6 +34,7 @@
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Config.hpp"
 #include "libslic3r/Geometry.hpp"
+#include "libslic3r/GCode/PostProcessor.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Print.hpp"
@@ -138,7 +139,6 @@ int CLI::run(int argc, char **argv)
         m_print_config.apply(config);
     }
 
-#if ENABLE_GCODE_VIEWER
     // are we starting as gcodeviewer ?
     for (auto it = m_actions.begin(); it != m_actions.end(); ++it) {
         if (*it == "gcodeviewer") {
@@ -148,10 +148,8 @@ int CLI::run(int argc, char **argv)
             break;
         }
     }
-#endif // ENABLE_GCODE_VIEWER
 
     // Read input file(s) if any.
-#if ENABLE_GCODE_VIEWER
     for (const std::string& file : m_input_files) {
         std::string ext = boost::filesystem::path(file).extension().string();
         if (ext == ".gcode" || ext == ".g") {
@@ -162,7 +160,6 @@ int CLI::run(int argc, char **argv)
         }
     }
     if (!start_as_gcodeviewer) {
-#endif // ENABLE_GCODE_VIEWER
         for (const std::string& file : m_input_files) {
             if (!boost::filesystem::exists(file)) {
                 boost::nowide::cerr << "No such file: " << file << std::endl;
@@ -195,9 +192,7 @@ int CLI::run(int argc, char **argv)
             }
             m_models.push_back(model);
         }
-#if ENABLE_GCODE_VIEWER
     }
-#endif // ENABLE_GCODE_VIEWER
 
     // Apply command line options to a more specific DynamicPrintConfig which provides normalize()
     // (command line options override --load files)
@@ -489,6 +484,12 @@ int CLI::run(int argc, char **argv)
                 if (printer_technology == ptFFF) {
                     for (auto* mo : model.objects)
                         fff_print.auto_assign_extruders(mo);
+                } else {
+                    // The default for "output_filename_format" is good for FDM: "[input_filename_base].gcode"
+                    // Replace it with a reasonable SLA default.
+                    std::string &format = m_print_config.opt_string("output_filename_format", true);
+                    if (format == static_cast<const ConfigOptionString*>(m_print_config.def()->get("output_filename_format")->default_value.get())->value)
+                        format = "[input_filename_base].SL1";
                 }
                 print->apply(model, m_print_config);
                 std::string err = print->validate();
@@ -504,11 +505,7 @@ int CLI::run(int argc, char **argv)
                         print->process();
                         if (printer_technology == ptFFF) {
                             // The outfile is processed by a PlaceholderParser.
-#if ENABLE_GCODE_VIEWER
                             outfile = fff_print.export_gcode(outfile, nullptr, nullptr);
-#else
-                            outfile = fff_print.export_gcode(outfile, nullptr);
-#endif // ENABLE_GCODE_VIEWER
                             outfile_final = fff_print.print_statistics().finalize_output_path(outfile);
                         } else {
                             outfile = sla_print.output_filepath(outfile);
@@ -523,6 +520,8 @@ int CLI::run(int argc, char **argv)
                             }
                             outfile = outfile_final;
                         }
+                        // Run the post-processing scripts if defined.
+                        run_post_process_scripts(outfile, fff_print.full_print_config());
                         boost::nowide::cout << "Slicing result exported to " << outfile << std::endl;
                     } catch (const std::exception &ex) {
                         boost::nowide::cerr << ex.what() << std::endl;
@@ -559,11 +558,6 @@ int CLI::run(int argc, char **argv)
                     << " (" << print.total_extruded_volume()/1000 << "cm3)" << std::endl;
 */
             }
-#if !ENABLE_GCODE_VIEWER
-        } else if (opt_key == "gcodeviewer") {
-            start_gui = true;
-        	start_as_gcodeviewer = true;
-#endif // !ENABLE_GCODE_VIEWER
         } else {
             boost::nowide::cerr << "error: option not supported yet: " << opt_key << std::endl;
             return 1;
