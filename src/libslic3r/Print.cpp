@@ -1400,8 +1400,12 @@ std::string Print::validate() const
 #endif
 
 		auto validate_extrusion_width = [min_nozzle_diameter, max_nozzle_diameter](const ConfigBase &config, const char *opt_key, double layer_height, std::string &err_msg) -> bool {
-        	double extrusion_width_min = config.get_abs_value(opt_key, min_nozzle_diameter);
-        	double extrusion_width_max = config.get_abs_value(opt_key, max_nozzle_diameter);
+            // This may change in the future, if we switch to "extrusion width wrt. nozzle diameter"
+            // instead of currently used logic "extrusion width wrt. layer height", see GH issues #1923 #2829.
+//        	double extrusion_width_min = config.get_abs_value(opt_key, min_nozzle_diameter);
+//        	double extrusion_width_max = config.get_abs_value(opt_key, max_nozzle_diameter);
+            double extrusion_width_min = config.get_abs_value(opt_key, layer_height);
+            double extrusion_width_max = config.get_abs_value(opt_key, layer_height);
         	if (extrusion_width_min == 0) {
         		// Default "auto-generated" extrusion width is always valid.
         	} else if (extrusion_width_min <= layer_height) {
@@ -1851,10 +1855,7 @@ void Print::_make_brim()
         }
         polygons_append(loops, offset(islands, -0.5f * float(flow.scaled_spacing())));
     }
-    loops = union_pt_chained(loops, false);
-    // The function above produces ordering well suited for concentric infill (from outside to inside).
-    // For Brim, the ordering should be reversed (from inside to outside).
-    std::reverse(loops.begin(), loops.end());
+    loops = union_pt_chained_outside_in(loops, false);
 
     // If there is a possibility that brim intersects skirt, go through loops and split those extrusions
     // The result is either the original Polygon or a list of Polylines
